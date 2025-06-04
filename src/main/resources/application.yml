@@ -1,0 +1,9 @@
+spring:
+  application:
+    name: reservation
+  cache:
+    type: redis
+  data:
+    redis:
+      host: localhost
+      port: 6379
