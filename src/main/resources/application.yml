@@ -3,7 +3,28 @@ spring:
     name: reservation
   cache:
     type: redis
+  datasource:
+    driver-class-name: org.h2.Driver
+    url: jdbc:h2:mem:reservation;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    username: azki
+    password: azki@1372
   data:
     redis:
       host: localhost
       port: 6379
+  liquibase:
+    contexts: ${spring.profiles.active}
+    database-change-log-table: Z_LIQ_CHANGELOG
+    database-change-log-lock-table: Z_LIQ_CHANGELOG_LOCK
+    change-log: classpath:db/changelog/db.changelog-master.xml
+reservation:
+  queue:
+    batch-size: 10
+    poll-interval-ms: 100
+management:
+  server:
+    port: 8081
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus

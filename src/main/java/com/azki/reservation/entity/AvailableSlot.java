@@ -12,7 +12,7 @@ import java.time.LocalDateTime;
 @EqualsAndHashCode(callSuper = false)
 @Data
 @Entity
-public class TimeSlot extends Auditable{
+public class AvailableSlot extends Auditable{
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;

@@ -15,7 +15,7 @@ public class User extends Auditable {
     private String email;
 
     @Column(nullable = false)
-    private String name;
+    private String userName;
 
     @Column(nullable = false)
     private String password;

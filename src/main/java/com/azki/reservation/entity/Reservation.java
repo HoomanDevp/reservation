@@ -18,7 +18,7 @@ public class Reservation extends Auditable{
     private User user;
 
     @OneToOne(optional = false)
-    private TimeSlot timeSlot;
+    private AvailableSlot availableSlot;
 
     private LocalDateTime reservedAt;
 }

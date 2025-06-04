@@ -5,4 +5,5 @@ import lombok.Data;
 @Data
 public class ReservationRequestDto {
     private String email;
+    private String requestId;
 }
