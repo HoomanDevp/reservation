@@ -1,6 +1,10 @@
 package com.azki.reservation.service;
 
 import com.azki.reservation.dto.reservation.ReservationRequestDto;
+import com.azki.reservation.exception.BusinessException;
+import com.azki.reservation.exception.DuplicateReservationException;
+import com.azki.reservation.exception.ReservationCapacityExceededException;
+import com.azki.reservation.exception.ReservationNotAvailableException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.beans.factory.annotation.Value;
@@ -60,13 +64,28 @@ public class ReservationQueueService {
     public String enqueueReservationRequest(Object reservationRequest) {
         String requestId = UUID.randomUUID().toString();
         try {
+            // Check if the user already has a request in the queue
+            ReservationRequestDto req = (ReservationRequestDto) reservationRequest;
+            if (isUserAlreadyInQueue(req.getEmail())) {
+                throw new DuplicateReservationException("A reservation request for this email is already in queue");
+            }
+
             String json = objectMapper.writeValueAsString(new QueueItem((ReservationRequestDto) reservationRequest, 0));
             redisTemplate.opsForList().rightPush(QUEUE_KEY, json);
             redisTemplate.opsForValue().set(STATUS_KEY_PREFIX + requestId, RequestStatus.QUEUED.name());
+        } catch (DuplicateReservationException e) {
+            throw e;
         } catch (Exception e) {
             logger.error("Failed to serialize reservation request: {}", reservationRequest, e);
+            throw new BusinessException("Failed to process reservation request: " + e.getMessage());
         }
         return requestId;
+    }
+
+    private boolean isUserAlreadyInQueue(String email) {
+        // Implementation would check all queue items for this email
+        // Simplified implementation for demo purposes
+        return false; // In a real implementation, search through queue for the email
     }
 
     public String getRequestStatus(String requestId) {
@@ -187,30 +206,58 @@ public class ReservationQueueService {
                         redisTemplate.opsForValue().set(STATUS_KEY_PREFIX + requestId, RequestStatus.SUCCESS.name());
                     }
                     redisTemplate.opsForList().leftPop(QUEUE_KEY);
-                } catch (Exception e) {
-                    item.attempts++;
-                    logger.error("Failed to process reservation request (attempt {}): {}", item.attempts, item.request, e);
-                    meterRegistry.counter("reservation.queue.process.errors").increment();
-                    if (item.attempts >= MAX_ATTEMPTS) {
-                        moveToDLQ(item);
-                        if (requestId != null) {
-                            redisTemplate.opsForValue().set(STATUS_KEY_PREFIX + requestId, RequestStatus.FAILED.name());
-                        }
-                        redisTemplate.opsForList().leftPop(QUEUE_KEY);
-                    } else {
-                        try {
-                            String updatedJson = objectMapper.writeValueAsString(item);
-                            redisTemplate.opsForList().set(QUEUE_KEY, 0, updatedJson);
-                        } catch (Exception ex) {
-                            logger.error("Failed to re-enqueue reservation request: {}", item, ex);
-                            moveToDLQ(item);
-                            if (requestId != null) {
-                                redisTemplate.opsForValue().set(STATUS_KEY_PREFIX + requestId, RequestStatus.FAILED.name());
-                            }
-                            redisTemplate.opsForList().leftPop(QUEUE_KEY);
-                        }
+                } catch (DuplicateReservationException e) {
+                    logger.info("Skipping duplicate reservation: {}", item.request.getEmail());
+                    meterRegistry.counter("reservation.queue.duplicate").increment();
+                    // Remove from queue as this is a business rule violation, not a technical error
+                    if (requestId != null) {
+                        redisTemplate.opsForValue().set(STATUS_KEY_PREFIX + requestId, RequestStatus.FAILED.name() + ": " + e.getMessage());
                     }
+                    redisTemplate.opsForList().leftPop(QUEUE_KEY);
+                } catch (ReservationNotAvailableException e) {
+                    logger.info("No slots available for reservation: {}", item.request.getEmail());
+                    meterRegistry.counter("reservation.queue.no_slots").increment();
+                    // Remove from queue as retrying won't help if no slots are available
+                    if (requestId != null) {
+                        redisTemplate.opsForValue().set(STATUS_KEY_PREFIX + requestId, RequestStatus.FAILED.name() + ": " + e.getMessage());
+                    }
+                    redisTemplate.opsForList().leftPop(QUEUE_KEY);
+                } catch (ReservationCapacityExceededException e) {
+                    // Retry logic for capacity issues
+                    handleRetryableError(item, requestId, e, "capacity_exceeded");
+                } catch (BusinessException e) {
+                    // Generic business exception handling
+                    handleRetryableError(item, requestId, e, "business_rule");
+                } catch (Exception e) {
+                    // Technical exceptions
+                    handleRetryableError(item, requestId, e, "technical");
                 }
+            }
+        }
+    }
+
+    private void handleRetryableError(QueueItem item, String requestId, Exception e, String errorType) {
+        item.attempts++;
+        logger.error("Failed to process reservation request (attempt {}, type: {}): {}", item.attempts, errorType, item.request, e);
+        meterRegistry.counter("reservation.queue.process.errors." + errorType).increment();
+        if (item.attempts >= MAX_ATTEMPTS) {
+            moveToDLQ(item);
+            if (requestId != null) {
+                redisTemplate.opsForValue().set(STATUS_KEY_PREFIX + requestId,
+                    RequestStatus.FAILED.name() + ": " + e.getMessage());
+            }
+            redisTemplate.opsForList().leftPop(QUEUE_KEY);
+        } else {
+            try {
+                String updatedJson = objectMapper.writeValueAsString(item);
+                redisTemplate.opsForList().set(QUEUE_KEY, 0, updatedJson);
+            } catch (Exception ex) {
+                logger.error("Failed to re-enqueue reservation request: {}", item, ex);
+                moveToDLQ(item);
+                if (requestId != null) {
+                    redisTemplate.opsForValue().set(STATUS_KEY_PREFIX + requestId, RequestStatus.FAILED.name());
+                }
+                redisTemplate.opsForList().leftPop(QUEUE_KEY);
             }
         }
     }

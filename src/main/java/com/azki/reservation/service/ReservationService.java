@@ -3,6 +3,10 @@ package com.azki.reservation.service;
 import com.azki.reservation.entity.Reservation;
 import com.azki.reservation.entity.AvailableSlot;
 import com.azki.reservation.entity.User;
+import com.azki.reservation.exception.BusinessException;
+import com.azki.reservation.exception.DuplicateReservationException;
+import com.azki.reservation.exception.ReservationCapacityExceededException;
+import com.azki.reservation.exception.ReservationNotAvailableException;
 import com.azki.reservation.repository.ReservationRepository;
 import com.azki.reservation.repository.TimeSlotRepository;
 import com.azki.reservation.repository.UserRepository;
@@ -54,8 +58,7 @@ public class ReservationService {
      *
      * @param email the user's email
      * @return the created Reservation
-     * @throws IllegalArgumentException if the user is not found
-     * @throws IllegalStateException if no available time slots exist or concurrency issues persist
+     * @throws BusinessException if the user is not found or no available time slots exist
      */
     @Retryable(
         value = OptimisticLockingFailureException.class,
@@ -67,11 +70,17 @@ public class ReservationService {
         logger.info("Attempting to reserve nearest slot for user: {}", email);
         try {
             User user = userRepository.findByEmail(email)
-                    .orElseThrow(() -> new IllegalArgumentException("User not found for email: " + email));
+                    .orElseThrow(() -> new BusinessException("User not found for email: " + email));
+
+            // Check if user already has a pending reservation
+            if (reservationRepository.existsByUserEmailAndStartTimeAfter(email, LocalDateTime.now())) {
+                throw new DuplicateReservationException("User already has an active reservation");
+            }
+
             Reservation reservation = attemptReservation(user);
             meterRegistry.counter("reservation.success").increment();
             return reservation;
-        } catch (IllegalArgumentException | IllegalStateException e) {
+        } catch (BusinessException e) {
             meterRegistry.counter("reservation.failed").increment();
             throw e;
         }
@@ -81,7 +90,7 @@ public class ReservationService {
     public Reservation recoverFromOptimisticLockingFailure(OptimisticLockingFailureException e, String email) {
         logger.error("Failed to reserve slot after {} attempts due to concurrent modifications", MAX_RETRY_ATTEMPTS);
         meterRegistry.counter("reservation.optimistic_locking_failures").increment();
-        throw new IllegalStateException("Unable to reserve time slot due to high concurrency, please try again later", e);
+        throw new ReservationCapacityExceededException("Unable to reserve time slot due to high demand, please try again later");
     }
 
     /**
@@ -89,22 +98,22 @@ public class ReservationService {
      *
      * @param user the user making the reservation
      * @return the created reservation
-     * @throws IllegalStateException if no slots are available
+     * @throws ReservationNotAvailableException if no slots are available
      * @throws OptimisticLockingFailureException if concurrent modification is detected
      */
     @Transactional(noRollbackFor = OptimisticLockingFailureException.class)
     protected Reservation attemptReservation(User user) {
         AvailableSlot slot = findNextAvailableSlotCached()
-                .orElseThrow(() -> new IllegalStateException("No available time slots"));
+                .orElseThrow(() -> new ReservationNotAvailableException("No available time slots"));
 
         // Double-check the slot is still available in current database state
         AvailableSlot freshSlot = timeSlotRepository.findById(slot.getId())
-                .orElseThrow(() -> new IllegalStateException("Time slot no longer exists"));
+                .orElseThrow(() -> new ReservationNotAvailableException("Time slot no longer exists"));
 
         if (freshSlot.isReserved()) {
             logger.warn("Concurrency issue: Slot {} is already reserved in database.", freshSlot.getId());
             evictNextSlotCache();
-            throw new IllegalStateException("Time slot already reserved");
+            throw new ReservationNotAvailableException("Time slot already reserved");
         }
 
         freshSlot.setReserved(true);
@@ -127,13 +136,13 @@ public class ReservationService {
      * Cancels a reservation by its ID and frees the associated time slot. Also evicts the cache.
      *
      * @param id the reservation ID
-     * @throws IllegalArgumentException if the reservation is not found
+     * @throws BusinessException if the reservation is not found
      */
     @Transactional
     public void cancelReservation(Long id) {
         logger.info("Attempting to cancel reservation with id: {}", id);
         Reservation reservation = reservationRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Reservation not found for id: " + id));
+                .orElseThrow(() -> new BusinessException("Reservation not found for id: " + id));
 
         AvailableSlot slot = reservation.getAvailableSlot();
         slot.setReserved(false);

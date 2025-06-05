@@ -5,6 +5,7 @@ import com.azki.reservation.service.ReservationQueueService;
 import com.azki.reservation.service.ReservationService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -27,7 +28,7 @@ public class ReservationController {
 
     @Operation(summary = "رزرو نزدیک‌ترین زمان آزاد")
     @PostMapping
-    public ResponseEntity<String> reserveNearest(@RequestBody ReservationRequestDto request) {
+    public ResponseEntity<String> reserveNearest(@RequestBody @Valid ReservationRequestDto request) {
         String requestId = UUID.randomUUID().toString();
         request.setRequestId(requestId);
         return ResponseEntity.accepted().body(reservationQueueService.enqueueReservationRequest(request));
