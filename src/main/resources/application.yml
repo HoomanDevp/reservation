@@ -4,10 +4,17 @@ spring:
   cache:
     type: redis
   datasource:
-    driver-class-name: org.h2.Driver
-    url: jdbc:h2:mem:reservation;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
-    username: azki
-    password: azki@1372
+    driver-class-name: org.postgresql.Driver
+    url: jdbc:postgresql://localhost:5432/reservationdb
+    username: reservation_user
+    password: strongpassword
+  jpa:
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        format_sql: true
   data:
     redis:
       host: localhost
@@ -17,6 +24,7 @@ spring:
     database-change-log-table: Z_LIQ_CHANGELOG
     database-change-log-lock-table: Z_LIQ_CHANGELOG_LOCK
     change-log: classpath:db/changelog/db.changelog-master.xml
+    enabled: true
 reservation:
   queue:
     batch-size: 10

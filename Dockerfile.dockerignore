@@ -1,0 +1,25 @@
+# Git
+.git
+.gitignore
+
+# Logs
+logs/
+*.log
+
+# Build artifacts
+target/
+.mvn/wrapper/maven-wrapper.jar
+
+# IDE files
+.idea/
+*.iml
+.vscode/
+.project
+.classpath
+.settings/
+
+# OS files
+.DS_Store
+
+# Docker
+docker-compose*.yml

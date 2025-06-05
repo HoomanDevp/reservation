@@ -6,7 +6,7 @@
         http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
 
     <changeSet id="1-create-initial-tables" author="m.yarahmadi">
-        <createTable tableName="USER">
+        <createTable tableName="users">
             <column name="id" type="BIGINT" autoIncrement="true">
                 <constraints primaryKey="true" nullable="false"/>
             </column>
@@ -35,10 +35,10 @@
             <column name="id" type="BIGINT" autoIncrement="true">
                 <constraints primaryKey="true" nullable="false"/>
             </column>
-            <column name="start_time" type="DATETIME">
+            <column name="start_time" type="TIMESTAMP">
                 <constraints nullable="false"/>
             </column>
-            <column name="end_time" type="DATETIME">
+            <column name="end_time" type="TIMESTAMP">
                 <constraints nullable="false"/>
             </column>
             <column defaultValueBoolean="false"
@@ -49,11 +49,11 @@
                 <constraints nullable="false"/>
             </column>
             <column name="created_date"
-                    type="DATETIME">
+                    type="TIMESTAMP">
                 <constraints nullable="false"/>
             </column>
             <column name="last_modified_date"
-                    type="DATETIME"/>
+                    type="TIMESTAMP"/>
             <column name="last_modified_by"
                     type="VARCHAR(255)"/>
             <column defaultValueNumeric="0"
@@ -77,11 +77,11 @@
                 <constraints nullable="false"/>
             </column>
             <column name="created_date"
-                    type="DATETIME">
+                    type="TIMESTAMP">
                 <constraints nullable="false"/>
             </column>
             <column name="last_modified_date"
-                    type="DATETIME"/>
+                    type="TIMESTAMP"/>
             <column name="last_modified_by"
                     type="VARCHAR(255)"/>
             <column defaultValueNumeric="0"
@@ -94,49 +94,49 @@
     <changeSet id="1-insert-initial-data" author="m.yarahmadi">
         <sql>
         <![CDATA[
-            INSERT INTO "USER" (user_name, email, password, CREATED_BY, CREATED_DATE, VERSION)
+            INSERT INTO users (user_name, email, password, created_by, created_date, version)
             VALUES ('user1', 'johndoe1@example.com', 'hashed_password_125', 'SYSTEM', CURRENT_TIMESTAMP, 0);
 
-            INSERT INTO "USER" (user_name, email, password, CREATED_BY, CREATED_DATE, VERSION)
+            INSERT INTO users (user_name, email, password, created_by, created_date, version)
             VALUES ('user2', 'johndoe2@example.com', 'hashed_password_456', 'SYSTEM', CURRENT_TIMESTAMP, 0);
 
-            INSERT INTO "USER" (user_name, email, password, CREATED_BY, CREATED_DATE, VERSION)
+            INSERT INTO users (user_name, email, password, created_by, created_date, version)
             VALUES ('user3', 'user125@example.com', 'hashed_password_789', 'SYSTEM', CURRENT_TIMESTAMP, 0);
 
-            INSERT INTO available_slot (start_time, end_time, is_reserved, CREATED_BY, CREATED_DATE, VERSION)
+            INSERT INTO available_slot (start_time, end_time, is_reserved, created_by, created_date, version)
             VALUES ('2025-10-01 09:00:00', '2025-10-01 10:00:00', false, 'SYSTEM', CURRENT_TIMESTAMP, 0);
 
-            INSERT INTO available_slot (start_time, end_time, is_reserved, CREATED_BY, CREATED_DATE, VERSION)
+            INSERT INTO available_slot (start_time, end_time, is_reserved, created_by, created_date, version)
             VALUES ('2025-10-01 10:00:00', '2025-10-01 11:00:00', false, 'SYSTEM', CURRENT_TIMESTAMP, 0);
 
-            INSERT INTO available_slot (start_time, end_time, is_reserved, CREATED_BY, CREATED_DATE, VERSION)
+            INSERT INTO available_slot (start_time, end_time, is_reserved, created_by, created_date, version)
             VALUES ('2025-10-01 11:00:00', '2025-10-01 12:00:00', false, 'SYSTEM', CURRENT_TIMESTAMP, 0);
 
-            INSERT INTO available_slot (start_time, end_time, is_reserved, CREATED_BY, CREATED_DATE, VERSION)
+            INSERT INTO available_slot (start_time, end_time, is_reserved, created_by, created_date, version)
             VALUES ('2025-10-01 12:00:00', '2025-10-01 13:00:00', FALSE, 'SYSTEM', CURRENT_TIMESTAMP, 0);
 
-            INSERT INTO available_slot (start_time, end_time, is_reserved, CREATED_BY, CREATED_DATE, VERSION)
+            INSERT INTO available_slot (start_time, end_time, is_reserved, created_by, created_date, version)
             VALUES ('2025-10-01 13:00:00', '2025-10-01 14:00:00', FALSE, 'SYSTEM', CURRENT_TIMESTAMP, 0);
 
-            INSERT INTO available_slot (start_time, end_time, is_reserved, CREATED_BY, CREATED_DATE, VERSION)
+            INSERT INTO available_slot (start_time, end_time, is_reserved, created_by, created_date, version)
             VALUES ('2025-10-01 14:00:00', '2025-10-01 15:00:00', FALSE, 'SYSTEM', CURRENT_TIMESTAMP, 0);
 
-            INSERT INTO available_slot (start_time, end_time, is_reserved, CREATED_BY, CREATED_DATE, VERSION)
+            INSERT INTO available_slot (start_time, end_time, is_reserved, created_by, created_date, version)
             VALUES ('2025-10-01 15:00:00', '2025-10-01 16:00:00', FALSE, 'SYSTEM', CURRENT_TIMESTAMP, 0);
 
-            INSERT INTO available_slot (start_time, end_time, is_reserved, CREATED_BY, CREATED_DATE, VERSION)
+            INSERT INTO available_slot (start_time, end_time, is_reserved, created_by, created_date, version)
             VALUES ('2025-10-01 16:00:00', '2025-10-01 17:00:00', FALSE, 'SYSTEM', CURRENT_TIMESTAMP, 0);
 
-            INSERT INTO available_slot (start_time, end_time, is_reserved, CREATED_BY, CREATED_DATE, VERSION)
+            INSERT INTO available_slot (start_time, end_time, is_reserved, created_by, created_date, version)
             VALUES ('2025-10-01 17:00:00', '2025-10-01 18:00:00', FALSE, 'SYSTEM', CURRENT_TIMESTAMP, 0);
 
-            INSERT INTO available_slot (start_time, end_time, is_reserved, CREATED_BY, CREATED_DATE, VERSION)
+            INSERT INTO available_slot (start_time, end_time, is_reserved, created_by, created_date, version)
             VALUES ('2025-10-01 18:00:00', '2025-10-01 19:00:00', FALSE, 'SYSTEM', CURRENT_TIMESTAMP, 0);
 
-            INSERT INTO available_slot (start_time, end_time, is_reserved, CREATED_BY, CREATED_DATE, VERSION)
+            INSERT INTO available_slot (start_time, end_time, is_reserved, created_by, created_date, version)
             VALUES ('2025-10-01 19:00:00', '2025-10-01 20:00:00', FALSE, 'SYSTEM', CURRENT_TIMESTAMP, 0);
 
-            INSERT INTO available_slot (start_time, end_time, is_reserved, CREATED_BY, CREATED_DATE, VERSION)
+            INSERT INTO available_slot (start_time, end_time, is_reserved, created_by, created_date, version)
             VALUES ('2025-10-01 20:00:00', '2025-10-01 21:00:00', FALSE, 'SYSTEM', CURRENT_TIMESTAMP, 0);
             ]]>
         </sql>
