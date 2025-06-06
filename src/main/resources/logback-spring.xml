@@ -2,12 +2,19 @@
 <configuration>
     <include resource="org/springframework/boot/logging/logback/base.xml"/>
 
+    <!-- Common pattern layout with colors -->
+    <property name="CONSOLE_LOG_PATTERN" value="%d{yyyy-MM-dd HH:mm:ss.SSS} %highlight(%-5level) [%boldYellow(%thread)] %boldCyan(%logger{36}) - %msg%n"/>
+    <property name="FILE_LOG_PATTERN" value="%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] %logger{36} - %msg%n"/>
+    <property name="SECURITY_LOG_PATTERN" value="%d{yyyy-MM-dd HH:mm:ss.SSS} %highlight(%-5level) [SECURITY] %boldRed(%msg)%n"/>
+
+    <!-- General application console appender -->
     <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
-            <pattern>%d{yyyy-MM-dd HH:mm:ss} %-5level [%thread] %logger{36} - %msg%n</pattern>
+            <pattern>${CONSOLE_LOG_PATTERN}</pattern>
         </encoder>
     </appender>
 
+    <!-- General application file appender -->
     <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
         <file>logs/reservation-app.log</file>
         <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
@@ -15,25 +22,50 @@
             <maxHistory>30</maxHistory>
         </rollingPolicy>
         <encoder>
-            <pattern>%d{yyyy-MM-dd HH:mm:ss} %-5level [%thread] %logger{36} - %msg%n</pattern>
+            <pattern>${FILE_LOG_PATTERN}</pattern>
         </encoder>
     </appender>
 
+    <!-- Security audit log appender -->
+    <appender name="SECURITY_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>logs/security-audit.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>logs/security-audit.%d{yyyy-MM-dd}.log</fileNamePattern>
+            <maxHistory>90</maxHistory> <!-- Keep security logs longer -->
+        </rollingPolicy>
+        <encoder>
+            <pattern>${SECURITY_LOG_PATTERN}</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Configure loggers -->
+    <logger name="SECURITY_AUDIT" level="INFO" additivity="false">
+        <appender-ref ref="SECURITY_FILE" />
+        <appender-ref ref="STDOUT" />
+    </logger>
+
+    <!-- Root logger -->
     <root level="INFO">
         <appender-ref ref="STDOUT" />
         <appender-ref ref="FILE" />
     </root>
 
+    <!-- Profile-specific settings -->
     <springProfile name="dev">
         <root level="DEBUG">
             <appender-ref ref="STDOUT" />
         </root>
+        <logger name="SECURITY_AUDIT" level="DEBUG" />
+        <logger name="com.azki.reservation" level="DEBUG" />
     </springProfile>
 
     <springProfile name="prod">
         <root level="INFO">
             <appender-ref ref="FILE" />
         </root>
+        <!-- Even in prod, keep SECURITY_AUDIT at INFO level minimum -->
+        <logger name="SECURITY_AUDIT" level="INFO">
+            <appender-ref ref="SECURITY_FILE" />
+        </logger>
     </springProfile>
 </configuration>
-

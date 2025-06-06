@@ -7,10 +7,10 @@ services:
     ports:
       - "8080:8080"
     environment:
-      - SPRING_PROFILES_ACTIVE=prod
+      - SPRING_PROFILES_ACTIVE=dev
       - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/reservationdb
-      - SPRING_DATASOURCE_USERNAME=reservation_user
-      - SPRING_DATASOURCE_PASSWORD=strongpassword
+      - SPRING_DATASOURCE_USERNAME=azki
+      - SPRING_DATASOURCE_PASSWORD=azki!p@ss
       - SPRING_REDIS_HOST=redis
       - SPRING_REDIS_PORT=6379
       - SPRING_LIQUIBASE_ENABLED=true
@@ -37,8 +37,8 @@ services:
       - "5432:5432"
     environment:
       - POSTGRES_DB=reservationdb
-      - POSTGRES_USER=reservation_user
-      - POSTGRES_PASSWORD=strongpassword
+      - POSTGRES_USER=azki
+      - POSTGRES_PASSWORD=azki!p@ss
     volumes:
       - postgres-data:/var/lib/postgresql/data
       # Optional: Add initialization scripts if needed
@@ -51,18 +51,18 @@ services:
       start_period: 10s
 
   redis:
-    image: redis:7-alpine
+    image: redis:7
     restart: always
     ports:
       - "6379:6379"
     volumes:
       - redis-data:/data
-    command: redis-server --appendonly yes
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 10s
 
 volumes:
   app-logs:

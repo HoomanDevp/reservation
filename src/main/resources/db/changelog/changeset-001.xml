@@ -43,7 +43,9 @@
             </column>
             <column defaultValueBoolean="false"
                     name="is_reserved"
-                    type="BOOLEAN"/>
+                    type="BOOLEAN">
+                <constraints nullable="false"/>
+            </column>
             <column name="created_by"
                     type="VARCHAR(255)">
                 <constraints nullable="false"/>
@@ -67,9 +69,12 @@
                 <constraints primaryKey="true" nullable="false"/>
             </column>
             <column name="user_id" type="BIGINT">
-                <constraints nullable="false"/>
+                <constraints nullable="false" foreignKeyName="fk_reservation_user" references="users(id)"/>
             </column>
             <column name="available_slot_id" type="BIGINT">
+                <constraints nullable="false" foreignKeyName="fk_reservation_slot" references="available_slot(id)" unique="true"/>
+            </column>
+            <column name="reserved_at" type="TIMESTAMP">
                 <constraints nullable="false"/>
             </column>
             <column name="created_by"
