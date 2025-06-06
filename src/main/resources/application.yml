@@ -1,24 +1,26 @@
 spring:
   application:
     name: reservation
-  cache:
-    type: redis
   datasource:
     driver-class-name: org.postgresql.Driver
     url: jdbc:postgresql://localhost:5432/reservationdb
-    username: reservation_user
-    password: strongpassword
+    username: azki
+    password: azki!p@ss
+  data:
+    redis:
+      host: localhost
+      port: 6379
+  profiles:
+    active: dev
+  cache:
+    type: redis
   jpa:
-    database-platform: org.hibernate.dialect.PostgreSQLDialect
     hibernate:
       ddl-auto: validate
     properties:
       hibernate:
         format_sql: true
-  data:
-    redis:
-      host: localhost
-      port: 6379
+
   liquibase:
     contexts: ${spring.profiles.active}
     database-change-log-table: Z_LIQ_CHANGELOG
@@ -27,8 +29,8 @@ spring:
     enabled: true
 reservation:
   queue:
-    batch-size: 10
-    poll-interval-ms: 100
+    batch-size: 50
+    poll-interval-ms: 10
 management:
   server:
     port: 8081
