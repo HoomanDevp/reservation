@@ -16,7 +16,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import jakarta.annotation.PreDestroy;
-import java.util.List;
+
 import java.util.UUID;
 
 /**
@@ -38,6 +38,7 @@ public class ReservationQueueService {
     private static final Logger logger = LoggerFactory.getLogger(ReservationQueueService.class);
     private static final String QUEUE_KEY = "reservation:queue";
     private static final String DLQ_KEY = "reservation:dlq";
+    private static final String EMAIL_SET_KEY = "reservation:emails:queued"; // Key for tracking emails in queue
     private static final int MAX_ATTEMPTS = 3;
     private static final String STATUS_KEY_PREFIX = "reservation:status:";
     @Value("${reservation.queue.batch-size:10}")
@@ -55,24 +56,28 @@ public class ReservationQueueService {
     private static class QueueItem {
         public ReservationRequestDto request;
         public int attempts;
-        public QueueItem(ReservationRequestDto request, int attempts) {
+        public String requestId; // Added requestId field
+
+
+        public QueueItem(ReservationRequestDto request, int attempts, String requestId) {
             this.request = request;
             this.attempts = attempts;
+            this.requestId = requestId;
         }
     }
 
     public String enqueueReservationRequest(Object reservationRequest) {
         String requestId = UUID.randomUUID().toString();
         try {
-            // Check if the user already has a request in the queue
             ReservationRequestDto req = (ReservationRequestDto) reservationRequest;
             if (isUserAlreadyInQueue(req.getEmail())) {
                 throw new DuplicateReservationException("A reservation request for this email is already in queue");
             }
 
-            String json = objectMapper.writeValueAsString(new QueueItem((ReservationRequestDto) reservationRequest, 0));
+            String json = objectMapper.writeValueAsString(new QueueItem((ReservationRequestDto) reservationRequest, 0, requestId));
             redisTemplate.opsForList().rightPush(QUEUE_KEY, json);
             redisTemplate.opsForValue().set(STATUS_KEY_PREFIX + requestId, RequestStatus.QUEUED.name());
+            redisTemplate.opsForSet().add(EMAIL_SET_KEY, req.getEmail()); // Add email to set
         } catch (DuplicateReservationException e) {
             throw e;
         } catch (Exception e) {
@@ -82,10 +87,9 @@ public class ReservationQueueService {
         return requestId;
     }
 
-    private boolean isUserAlreadyInQueue(String email) {
-        // Implementation would check all queue items for this email
-        // Simplified implementation for demo purposes
-        return false; // In a real implementation, search through queue for the email
+    boolean isUserAlreadyInQueue(String email) {
+        // Check if the email is in the Redis set for O(1) lookup
+        return Boolean.TRUE.equals(redisTemplate.opsForSet().isMember(EMAIL_SET_KEY, email));
     }
 
     public String getRequestStatus(String requestId) {
@@ -142,15 +146,6 @@ public class ReservationQueueService {
     }
 
     /**
-     * Returns the number of failed attempts for a given requestId (if available).
-     */
-    public Integer getFailedAttempts(String requestId) {
-        // This is a simple implementation; for more advanced tracking, store attempts in Redis per requestId.
-        // Not implemented in this version for brevity.
-        return null;
-    }
-
-    /**
      * Ensures idempotency by checking if a request with the same requestId has already succeeded.
      */
     private boolean isAlreadyProcessed(String requestId) {
@@ -158,7 +153,6 @@ public class ReservationQueueService {
         return RequestStatus.SUCCESS.name().equals(status);
     }
 
-    // Metrics registration in constructor
     public ReservationQueueService(
         RedisTemplate<String, Object> redisTemplate,
         ReservationService reservationService,
@@ -176,62 +170,48 @@ public class ReservationQueueService {
     @Scheduled(fixedDelayString = "${reservation.queue.poll-interval-ms:100}")
     public void processReservationQueue() {
         if (!running) return;
-        for (;;) {
-            List<Object> batch = redisTemplate.opsForList().range(QUEUE_KEY, 0, batchSize - 1);
-            if (batch == null || batch.isEmpty()) break;
-            for (Object jsonObj : batch) {
-                QueueItem item = null;
-                if (jsonObj instanceof String json) {
-                    try {
-                        item = objectMapper.readValue(json, QueueItem.class);
-                    } catch (Exception e) {
-                        logger.error("Failed to deserialize queue item: {}", json, e);
-                        meterRegistry.counter("reservation.queue.deserialize.errors").increment();
-                        continue;
-                    }
+        for (int i = 0; i < batchSize; i++) {
+            QueueItem item = dequeueQueueItem();
+            if (item == null) break;
+
+            String requestId = item.requestId; // Use requestId directly from QueueItem
+            if (requestId != null) {
+                if (isAlreadyProcessed(requestId)) {
+                    continue; // Item already popped by dequeueQueueItem
                 }
-                if (item == null) continue;
-                String requestId = item.request.getRequestId();
+                redisTemplate.opsForValue().set(STATUS_KEY_PREFIX + requestId, RequestStatus.PROCESSING.name());
+            }
+
+            try {
+                reservationService.reserveNearestSlot(item.request.getEmail());
+                meterRegistry.counter("reservation.queue.processed").increment();
                 if (requestId != null) {
-                    if (isAlreadyProcessed(requestId)) {
-                        redisTemplate.opsForList().leftPop(QUEUE_KEY);
-                        continue;
-                    }
-                    redisTemplate.opsForValue().set(STATUS_KEY_PREFIX + requestId, RequestStatus.PROCESSING.name());
+                    redisTemplate.opsForValue().set(STATUS_KEY_PREFIX + requestId, RequestStatus.SUCCESS.name());
                 }
-                try {
-                    reservationService.reserveNearestSlot(item.request.getEmail());
-                    meterRegistry.counter("reservation.queue.processed").increment();
-                    if (requestId != null) {
-                        redisTemplate.opsForValue().set(STATUS_KEY_PREFIX + requestId, RequestStatus.SUCCESS.name());
-                    }
-                    redisTemplate.opsForList().leftPop(QUEUE_KEY);
-                } catch (DuplicateReservationException e) {
-                    logger.info("Skipping duplicate reservation: {}", item.request.getEmail());
-                    meterRegistry.counter("reservation.queue.duplicate").increment();
-                    // Remove from queue as this is a business rule violation, not a technical error
-                    if (requestId != null) {
-                        redisTemplate.opsForValue().set(STATUS_KEY_PREFIX + requestId, RequestStatus.FAILED.name() + ": " + e.getMessage());
-                    }
-                    redisTemplate.opsForList().leftPop(QUEUE_KEY);
-                } catch (ReservationNotAvailableException e) {
-                    logger.info("No slots available for reservation: {}", item.request.getEmail());
-                    meterRegistry.counter("reservation.queue.no_slots").increment();
-                    // Remove from queue as retrying won't help if no slots are available
-                    if (requestId != null) {
-                        redisTemplate.opsForValue().set(STATUS_KEY_PREFIX + requestId, RequestStatus.FAILED.name() + ": " + e.getMessage());
-                    }
-                    redisTemplate.opsForList().leftPop(QUEUE_KEY);
-                } catch (ReservationCapacityExceededException e) {
-                    // Retry logic for capacity issues
-                    handleRetryableError(item, requestId, e, "capacity_exceeded");
-                } catch (BusinessException e) {
-                    // Generic business exception handling
-                    handleRetryableError(item, requestId, e, "business_rule");
-                } catch (Exception e) {
-                    // Technical exceptions
-                    handleRetryableError(item, requestId, e, "technical");
+                // Remove email from tracking set after successful processing
+                redisTemplate.opsForSet().remove(EMAIL_SET_KEY, item.request.getEmail());
+            } catch (DuplicateReservationException e) {
+                logger.info("Skipping duplicate reservation: {}", item.request.getEmail());
+                meterRegistry.counter("reservation.queue.duplicate").increment();
+                if (requestId != null) {
+                    redisTemplate.opsForValue().set(STATUS_KEY_PREFIX + requestId, RequestStatus.FAILED.name() + ": " + e.getMessage());
                 }
+                // Remove email from tracking set as this request is now completed (failed)
+                redisTemplate.opsForSet().remove(EMAIL_SET_KEY, item.request.getEmail());
+            } catch (ReservationNotAvailableException e) {
+                logger.info("No slots available for reservation: {}", item.request.getEmail());
+                meterRegistry.counter("reservation.queue.no_slots").increment();
+                if (requestId != null) {
+                    redisTemplate.opsForValue().set(STATUS_KEY_PREFIX + requestId, RequestStatus.FAILED.name() + ": " + e.getMessage());
+                }
+                // Remove email from tracking set as this request is now completed (failed)
+                redisTemplate.opsForSet().remove(EMAIL_SET_KEY, item.request.getEmail());
+            } catch (ReservationCapacityExceededException e) {
+                handleRetryableError(item, requestId, e, "capacity_exceeded");
+            } catch (BusinessException e) {
+                handleRetryableError(item, requestId, e, "business_rule");
+            } catch (Exception e) {
+                handleRetryableError(item, requestId, e, "technical");
             }
         }
     }
@@ -246,6 +226,8 @@ public class ReservationQueueService {
                 redisTemplate.opsForValue().set(STATUS_KEY_PREFIX + requestId,
                     RequestStatus.FAILED.name() + ": " + e.getMessage());
             }
+            // Remove email from tracking set when max retries are exhausted
+            redisTemplate.opsForSet().remove(EMAIL_SET_KEY, item.request.getEmail());
             redisTemplate.opsForList().leftPop(QUEUE_KEY);
         } else {
             try {
@@ -257,6 +239,8 @@ public class ReservationQueueService {
                 if (requestId != null) {
                     redisTemplate.opsForValue().set(STATUS_KEY_PREFIX + requestId, RequestStatus.FAILED.name());
                 }
+                // Remove email from tracking set when request can't be re-enqueued
+                redisTemplate.opsForSet().remove(EMAIL_SET_KEY, item.request.getEmail());
                 redisTemplate.opsForList().leftPop(QUEUE_KEY);
             }
         }

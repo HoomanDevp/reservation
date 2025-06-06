@@ -6,7 +6,6 @@ import lombok.Data;
 @Data
 @AllArgsConstructor
 public class ReservationResponseDto {
-    private Long reservationId;
-    private String startTime;
-    private String endTime;
+    private String requestId;
+    private String status;
 }

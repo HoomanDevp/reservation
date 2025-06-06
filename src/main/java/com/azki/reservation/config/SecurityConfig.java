@@ -26,7 +26,12 @@ public class SecurityConfig {
         return http
                 .csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/auth/**", "/swagger-ui/**", "/v3/api-docs/**").permitAll()
+                        .requestMatchers(
+                            "/api/auth/**",
+                            "/swagger-ui/**",
+                            "/v3/api-docs/**",
+                            "/api/v1/reservations/**" // Allow unrestricted access to reservation endpoints
+                        ).permitAll()
                         .anyRequest().authenticated()
                 )
                 .sessionManagement(sess -> sess
@@ -36,4 +41,3 @@ public class SecurityConfig {
                 .build();
     }
 }
-

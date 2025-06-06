@@ -14,9 +14,8 @@ import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.cache.CacheManager;
-import org.springframework.cache.annotation.Cacheable;
 import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.retry.annotation.Backoff;
 import org.springframework.retry.annotation.Retryable;
 import org.springframework.retry.annotation.Recover;
 import org.springframework.stereotype.Service;
@@ -35,20 +34,20 @@ public class ReservationService {
     private final TimeSlotRepository timeSlotRepository;
     private final ReservationRepository reservationRepository;
     private final UserRepository userRepository;
-    private final CacheManager cacheManager;
     private final MeterRegistry meterRegistry;
+    private final CacheableOperations cacheableOperations;
 
     private static final int MAX_RETRY_ATTEMPTS = 3;
     private static final Logger logger = LoggerFactory.getLogger(ReservationService.class);
 
     /**
      * Finds and caches the next available time slot.
+     * This method delegates to the CacheableOperations interface to ensure proper caching.
      *
      * @return Optional containing the next available TimeSlot, or empty if none found.
      */
-    @Cacheable(value = "nextSlot", key = "'single'")
     public Optional<AvailableSlot> findNextAvailableSlotCached() {
-        return timeSlotRepository.findNextAvailable(LocalDateTime.now());
+        return cacheableOperations.findNextAvailableSlotCached(LocalDateTime.now());
     }
 
     /**
@@ -62,30 +61,47 @@ public class ReservationService {
      */
     @Retryable(
         value = OptimisticLockingFailureException.class,
-        maxAttempts = MAX_RETRY_ATTEMPTS,
-        backoff = @org.springframework.retry.annotation.Backoff(delay = 100, multiplier = 2)
+        maxAttempts = 3,
+        backoff = @Backoff(delay = 10, multiplier = 1.5)
     )
     @Transactional
     public Reservation reserveNearestSlot(String email) {
         logger.info("Attempting to reserve nearest slot for user: {}", email);
         try {
             User user = userRepository.findByEmail(email)
-                    .orElseThrow(() -> new BusinessException("User not found for email: " + email));
+                    .orElseThrow(() -> {
+                        logger.warn("User not found for email: {}", email);
+                        return new BusinessException("User not found for email: " + email);
+                    });
+            logger.debug("Found user: id={}, email={}", user.getId(), user.getEmail());
 
             // Check if user already has a pending reservation
             if (reservationRepository.existsByUserEmailAndStartTimeAfter(email, LocalDateTime.now())) {
+                logger.warn("Duplicate reservation attempt detected for user: {}", email);
                 throw new DuplicateReservationException("User already has an active reservation");
             }
 
             Reservation reservation = attemptReservation(user);
+            logger.info("Successfully created reservation: id={} for user={} at time={}",
+                    reservation.getId(), email, reservation.getAvailableSlot().getStartTime());
             meterRegistry.counter("reservation.success").increment();
             return reservation;
         } catch (BusinessException e) {
+            logger.error("Failed to create reservation for user: {}. Reason: {}", email, e.getMessage());
             meterRegistry.counter("reservation.failed").increment();
             throw e;
         }
     }
 
+    /**
+     * Recovery method for handling OptimisticLockingFailureException when all retry attempts are exhausted.
+     * This method must match the signature expected by the @Retryable method but with the exception as the first parameter.
+     *
+     * @param e The OptimisticLockingFailureException that caused retries to fail
+     * @param email The user's email (from the original method parameter)
+     * @return Never returns a Reservation, always throws an exception
+     * @throws ReservationCapacityExceededException when recovery is needed
+     */
     @Recover
     public Reservation recoverFromOptimisticLockingFailure(OptimisticLockingFailureException e, String email) {
         logger.error("Failed to reserve slot after {} attempts due to concurrent modifications", MAX_RETRY_ATTEMPTS);
@@ -160,7 +176,6 @@ public class ReservationService {
      * Evicts the cache entry for the next available slot.
      */
     private void evictNextSlotCache() {
-        Optional.ofNullable(cacheManager.getCache("nextSlot"))
-                .ifPresent(cache -> cache.evict("single"));
+        cacheableOperations.evictNextSlotCache();
     }
 }
