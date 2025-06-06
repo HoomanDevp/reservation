@@ -1,0 +1,22 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/reservation_test
+    driver-class-name: org.postgresql.Driver
+    username: reservation_user
+    password: strongpassword
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+  liquibase:
+    enabled: true
+    change-log: classpath:db/changelog/db.changelog-master.xml
+
+logging:
+  level:
+    org.springframework: INFO
+    org.hibernate.SQL: DEBUG

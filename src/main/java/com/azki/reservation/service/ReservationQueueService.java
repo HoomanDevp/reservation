@@ -35,6 +35,7 @@ public class ReservationQueueService {
     private final ReservationService reservationService;
     private final ObjectMapper objectMapper;
     private final MeterRegistry meterRegistry;
+    private final RedisCleanupService redisCleanupService;
     private static final Logger logger = LoggerFactory.getLogger(ReservationQueueService.class);
     private static final String QUEUE_KEY = "reservation:queue";
     private static final String DLQ_KEY = "reservation:dlq";
@@ -76,7 +77,9 @@ public class ReservationQueueService {
 
             String json = objectMapper.writeValueAsString(new QueueItem((ReservationRequestDto) reservationRequest, 0, requestId));
             redisTemplate.opsForList().rightPush(QUEUE_KEY, json);
-            redisTemplate.opsForValue().set(STATUS_KEY_PREFIX + requestId, RequestStatus.QUEUED.name());
+            String statusKey = STATUS_KEY_PREFIX + requestId;
+            redisTemplate.opsForValue().set(statusKey, RequestStatus.QUEUED.name());
+            redisCleanupService.setExpiryOnStatusKey(statusKey);
             redisTemplate.opsForSet().add(EMAIL_SET_KEY, req.getEmail()); // Add email to set
         } catch (DuplicateReservationException e) {
             throw e;
@@ -157,12 +160,14 @@ public class ReservationQueueService {
         RedisTemplate<String, Object> redisTemplate,
         ReservationService reservationService,
         ObjectMapper objectMapper,
-        MeterRegistry meterRegistry
+        MeterRegistry meterRegistry,
+        RedisCleanupService redisCleanupService
     ) {
         this.redisTemplate = redisTemplate;
         this.reservationService = reservationService;
         this.objectMapper = objectMapper;
         this.meterRegistry = meterRegistry;
+        this.redisCleanupService = redisCleanupService;
         meterRegistry.gauge("reservation.queue.length", this, ReservationQueueService::getQueueLength);
         meterRegistry.gauge("reservation.dlq.length", this, ReservationQueueService::getDLQLength);
     }
@@ -179,14 +184,18 @@ public class ReservationQueueService {
                 if (isAlreadyProcessed(requestId)) {
                     continue; // Item already popped by dequeueQueueItem
                 }
-                redisTemplate.opsForValue().set(STATUS_KEY_PREFIX + requestId, RequestStatus.PROCESSING.name());
+                String statusKey = STATUS_KEY_PREFIX + requestId;
+                redisTemplate.opsForValue().set(statusKey, RequestStatus.PROCESSING.name());
+                redisCleanupService.setExpiryOnStatusKey(statusKey);
             }
 
             try {
                 reservationService.reserveNearestSlot(item.request.getEmail());
                 meterRegistry.counter("reservation.queue.processed").increment();
                 if (requestId != null) {
-                    redisTemplate.opsForValue().set(STATUS_KEY_PREFIX + requestId, RequestStatus.SUCCESS.name());
+                    String statusKey = STATUS_KEY_PREFIX + requestId;
+                    redisTemplate.opsForValue().set(statusKey, RequestStatus.SUCCESS.name());
+                    redisCleanupService.setExpiryOnStatusKey(statusKey);
                 }
                 // Remove email from tracking set after successful processing
                 redisTemplate.opsForSet().remove(EMAIL_SET_KEY, item.request.getEmail());
@@ -194,7 +203,9 @@ public class ReservationQueueService {
                 logger.info("Skipping duplicate reservation: {}", item.request.getEmail());
                 meterRegistry.counter("reservation.queue.duplicate").increment();
                 if (requestId != null) {
-                    redisTemplate.opsForValue().set(STATUS_KEY_PREFIX + requestId, RequestStatus.FAILED.name() + ": " + e.getMessage());
+                    String statusKey = STATUS_KEY_PREFIX + requestId;
+                    redisTemplate.opsForValue().set(statusKey, RequestStatus.FAILED.name() + ": " + e.getMessage());
+                    redisCleanupService.setExpiryOnStatusKey(statusKey);
                 }
                 // Remove email from tracking set as this request is now completed (failed)
                 redisTemplate.opsForSet().remove(EMAIL_SET_KEY, item.request.getEmail());
@@ -202,7 +213,9 @@ public class ReservationQueueService {
                 logger.info("No slots available for reservation: {}", item.request.getEmail());
                 meterRegistry.counter("reservation.queue.no_slots").increment();
                 if (requestId != null) {
-                    redisTemplate.opsForValue().set(STATUS_KEY_PREFIX + requestId, RequestStatus.FAILED.name() + ": " + e.getMessage());
+                    String statusKey = STATUS_KEY_PREFIX + requestId;
+                    redisTemplate.opsForValue().set(statusKey, RequestStatus.FAILED.name() + ": " + e.getMessage());
+                    redisCleanupService.setExpiryOnStatusKey(statusKey);
                 }
                 // Remove email from tracking set as this request is now completed (failed)
                 redisTemplate.opsForSet().remove(EMAIL_SET_KEY, item.request.getEmail());
