@@ -29,34 +29,34 @@ public abstract class Auditable {
     @CreatedBy
     @Setter(AccessLevel.NONE)
     @JsonProperty(access = JsonProperty.Access.READ_ONLY)
-    @Column(name = "created_by", updatable = false, nullable = false)
-    protected String createdBy;
+    @Column(name = "created_by", nullable = false)
+    private String createdBy;
 
     @CreatedDate
     @Setter(AccessLevel.NONE)
     @JsonProperty(access = JsonProperty.Access.READ_ONLY)
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss.SSS")
-    @Column(name = "created_date", updatable = false, nullable = false)
-    protected LocalDateTime createdDate;
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    @Column(name = "created_date", nullable = false)
+    private LocalDateTime createdDate;
 
     @LastModifiedDate
     @Setter(AccessLevel.NONE)
     @JsonProperty(access = JsonProperty.Access.READ_ONLY)
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss.SSS")
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     @Column(name = "last_modified_date")
-    protected LocalDateTime lastModifiedDate;
+    private LocalDateTime lastModifiedDate;
 
     @LastModifiedBy
     @Setter(AccessLevel.NONE)
     @JsonProperty(access = JsonProperty.Access.READ_ONLY)
     @Column(name = "last_modified_by")
-    protected String lastModifiedBy;
+    private String lastModifiedBy;
 
     @Version
-    @Builder.Default
+    @Setter(AccessLevel.NONE)
     @JsonProperty(access = JsonProperty.Access.READ_ONLY)
-    @Column(name = "version", nullable = false, columnDefinition = "INT DEFAULT 0")
-    public Integer version = 0;
+    @Column(name = "version")
+    private int version;
 
     @PrePersist
     protected void prePersist() {

@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 public interface ReservationRepository extends JpaRepository<Reservation, Long> {
 
@@ -21,4 +22,14 @@ public interface ReservationRepository extends JpaRepository<Reservation, Long> 
            "JOIN r.user u JOIN r.availableSlot a " +
            "WHERE u.email = :email AND a.startTime > :dateTime")
     boolean existsByUserEmailAndStartTimeAfter(@Param("email") String email, @Param("dateTime") LocalDateTime dateTime);
+
+    /**
+     * Finds all reservations that have expired based on the given threshold time.
+     * This is used for cleaning up old reservations.
+     *
+     * @param thresholdTime Reservations created before this time are considered expired
+     * @return List of expired reservation entities
+     */
+    @Query("SELECT r FROM Reservation r WHERE r.createdDate < :thresholdTime")
+    List<Reservation> findExpiredReservations(@Param("thresholdTime") LocalDateTime thresholdTime);
 }
